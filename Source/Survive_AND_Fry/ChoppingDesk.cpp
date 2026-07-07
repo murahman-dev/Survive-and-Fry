@@ -1,14 +1,12 @@
-#include "ChoppingDesk.h"
-#include "Kismet/GameplayStatics.h"
-#include "MainPlayer_CC.h"
+﻿#include "ChoppingDesk.h"
 
 AChoppingDesk::AChoppingDesk()
 {
-	SetRootComponent(AItemDesk::DefaultSceneRoot);
-
 	ChoppingBoard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Chopping Board"));
-	ChoppingBoard->SetupAttachment(AItemDesk::DefaultSceneRoot);
+	ChoppingBoard->SetupAttachment(DefaultSceneRoot);
 
+	// The desk knife
+	// Hidden while the player is actively chopping (player's knife shown instead)
 	Knife = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Knife"));
-	Knife->SetupAttachment(AItemDesk::DefaultSceneRoot);
+	Knife->SetupAttachment(DefaultSceneRoot);
 }

@@ -1,10 +1,10 @@
-#include "ChoppedVegetable.h"
+﻿#include "ChoppedVegetable.h"
 #include "NiagaraComponent.h"
-#include "NiagaraFunctionLibrary.h"
+#include "TimerManager.h"
 
 AChoppedVegetable::AChoppedVegetable()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
 	ChoppingEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ChoppingEffect"));
 	ChoppingEffect->SetupAttachment(RootSceneComponent);
@@ -14,22 +14,20 @@ void AChoppedVegetable::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Activate the particle effect immediately on spawn and start the auto-disable timer
 	if (ChoppingEffect != nullptr)
 	{
 		ChoppingEffect->Activate();
-		GetWorldTimerManager().SetTimer(ChoppingTimerHandle, this, &AChoppedVegetable::DisableEffects, 1.f, true);
+
+		// Timer that deactivates the effect 3 seconds after spawn
+		GetWorldTimerManager().SetTimer(ChoppingTimerHandle, this, &AChoppedVegetable::DisableEffects, 3.f, false);
 	}
 }
 
 void AChoppedVegetable::DisableEffects()
 {
-	TimeOut = TimeOut + 1.f;
-	if (TimeOut >= 3.f)
+	if (ChoppingEffect != nullptr)
 	{
-		if (ChoppingEffect != nullptr)
-		{
-			ChoppingEffect->Deactivate();
-			GetWorldTimerManager().ClearTimer(ChoppingTimerHandle);
-		}
+		ChoppingEffect->Deactivate();
 	}
 }

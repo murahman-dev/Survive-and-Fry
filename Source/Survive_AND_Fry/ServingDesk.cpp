@@ -1,20 +1,19 @@
-#include "ServingDesk.h"
+﻿#include "ServingDesk.h"
 #include "Bread.h"
+#include "IngredientData.h"
 #include "Math/UnrealMathUtility.h"
 #include "Kismet/GameplayStatics.h"
 #include "MainPlayer_PC.h"
+#include "SNF_GameMode.h"
 #include "NiagaraComponent.h"
-#include "NiagaraFunctionLibrary.h"
 #include "Sound/SoundBase.h"
 #include "MainPlayer_CC.h"
 #include "TimerManager.h"
+#include "Engine/DataTable.h"
+#include "GameFramework/Character.h"
 
 AServingDesk::AServingDesk()
 {
-	PrimaryActorTick.bCanEverTick = true;
-
-	SetRootComponent(DefaultSceneRoot);
-
 	ServingBoard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ServingBoard"));
 	ServingBoard->SetupAttachment(DefaultSceneRoot);
 
@@ -29,42 +28,69 @@ void AServingDesk::BeginPlay()
 {
 	Super::BeginPlay();
 
-	GetWorldTimerManager().SetTimer(EffectTimerHandle, this, &AServingDesk::DisableEffects , 1.f, true);
-	GetWorldTimerManager().PauseTimer(EffectTimerHandle);
-
-	RandomScale = FMath::RandRange(1, 3);
-	RandomIngredients = FMath::RandRange(1, 2);
+	// Cache references to the player controller and character for score/HUD updates
 	APlayerController* PlayerControllerReference = UGameplayStatics::GetPlayerController(this, 0);
 	if (PlayerControllerReference != nullptr)
 	{
 		MainPlayer_PC = Cast<AMainPlayer_PC>(PlayerControllerReference);
-		if (MainPlayer_PC != nullptr)
-		{
-			MainPlayer_PC->SetTaskDescription(RandomScale, RandomIngredients);
-		}
 	}
 	ACharacter* PlayerCharacterReference = UGameplayStatics::GetPlayerCharacter(this, 0);
 	if (PlayerCharacterReference != nullptr)
 	{
 		MainPlayer_CC = Cast<AMainPlayer_CC>(PlayerCharacterReference);
 	}
-	UE_LOG(LogTemp, Display, TEXT("Random Scale : %d"), RandomScale);
-	UE_LOG(LogTemp, Display, TEXT("Random Ingredients : %d"), RandomIngredients);
+
+	// The game mode owns the serve scoring rules
+	GameMode = GetWorld()->GetAuthGameMode<ASNF_GameMode>();
+
+	// Generate the first order on game start
+	PickNewOrder();
 }
 
 void AServingDesk::DisableEffects()
 {
-	TimeOut = TimeOut + 1.f;
-	UE_LOG(LogTemp, Display, TEXT("Timeout : %f"), TimeOut);
-	if (TimeOut >= 3.f)
+	if (SuccessfullServeEffect != nullptr)
 	{
-		if (SuccessfullServeEffect != nullptr && UnSuccessfullServeEffect != nullptr)
-		{
-			SuccessfullServeEffect->Deactivate();
-			UnSuccessfullServeEffect->Deactivate();
-			GetWorldTimerManager().PauseTimer(EffectTimerHandle);
-			TimeOut = 0.f;
-		}
+		SuccessfullServeEffect->Deactivate();
+	}
+	if (UnSuccessfullServeEffect != nullptr)
+	{
+		UnSuccessfullServeEffect->Deactivate();
+	}
+}
+
+void AServingDesk::PickNewOrder()
+{
+	if (IngredientDataTable == nullptr)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ServingDesk: IngredientDataTable is not assigned!"));
+		return;
+	}
+
+	TArray<FName> RowNames = IngredientDataTable->GetRowNames();
+	if (RowNames.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("ServingDesk: IngredientDataTable has no rows!"));
+		return;
+	}
+
+	RandomScale = FMath::RandRange(1, 3);
+
+	const int32 RandomIndex = FMath::RandRange(0, RowNames.Num() - 1);
+	const FName& ChosenRowName = RowNames[RandomIndex];
+	const FIngredientRow* Row = IngredientDataTable->FindRow<FIngredientRow>(ChosenRowName, TEXT("PickNewOrder"));
+
+	if (Row != nullptr)
+	{
+		CurrentIngredientName = Row->IngredientName;
+		CurrentDisplayName = Row->DisplayName;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("New Order - Scale: %d, Ingredient: %s"), RandomScale, *CurrentIngredientName.ToString());
+
+	if (MainPlayer_PC != nullptr)
+	{
+		MainPlayer_PC->SetTaskDescription(RandomScale, CurrentDisplayName);
 	}
 }
 
@@ -75,116 +101,65 @@ void AServingDesk::ServeItem()
 	{
 		if (MainPlayer_CC != nullptr)
 		{
-			MainPlayer_CC->SetTaskDescription(0.f);
+			MainPlayer_CC->SetTaskDescription(0);
 		}
-		if (RandomIngredients == 1)
-		{
-			if (Bread->HasTomato == true && Bread->HasAntiDote == true && RandomScale == ScaleValue)
-			{
-				ItemOnDesk = nullptr;
-				UE_LOG(LogTemp, Display, TEXT("Food Served!"));
-				RandomScale = FMath::RandRange(1, 3);
-				RandomIngredients = FMath::RandRange(1, 2);
-				UE_LOG(LogTemp, Display, TEXT("Random Scale : %d"), RandomScale);
-				ScaleValue = 1.f;
-				if (MainPlayer_PC != nullptr)
-				{
-					MainPlayer_PC->SetTaskDescription(RandomScale, RandomIngredients);
-					MainPlayer_PC->ZombiesSaved = MainPlayer_PC->ZombiesSaved + 1;
-					MainPlayer_PC->TimeLeft = MainPlayer_PC->TimeLeft + 5.f;
-					if (SuccessfullServeEffect != nullptr)
-					{
-						SuccessfullServeEffect->Activate();
-						GetWorldTimerManager().UnPauseTimer(EffectTimerHandle);
-					}
-					if (SuccessSound != nullptr)
-					{
-						UGameplayStatics::PlaySound2D(GetWorld(), SuccessSound);
-					}
-				}
-				Bread->Destroy();
-			}
-			else
-			{
-				ItemOnDesk = nullptr;
-				UE_LOG(LogTemp, Display, TEXT("Wrong Food Served!"));
-				RandomScale = FMath::RandRange(1, 3);
-				RandomIngredients = FMath::RandRange(1, 2);
-				UE_LOG(LogTemp, Display, TEXT("Random Scale : %d"), RandomScale);
-				ScaleValue = 1.f;
-				if (MainPlayer_PC != nullptr)
-				{
-					MainPlayer_PC->SetTaskDescription(RandomScale, RandomIngredients);
-					MainPlayer_PC->TimeLeft = MainPlayer_PC->TimeLeft - 10.f;
-					if (UnSuccessfullServeEffect != nullptr)
-					{
-						UnSuccessfullServeEffect->Activate();
-						GetWorldTimerManager().UnPauseTimer(EffectTimerHandle);
-					}
-					if (FailSound != nullptr)
-					{
-						UGameplayStatics::PlaySound2D(GetWorld(), FailSound);
-					}
-				}
-				Bread->Destroy();
-			}
-		}
-		else if (RandomIngredients == 2)
-		{
-			if (Bread->HasLettuce == true && Bread->HasAntiDote == true && RandomScale == ScaleValue)
-			{
-				ItemOnDesk = nullptr;
-				UE_LOG(LogTemp, Display, TEXT("Food Served!"));
-				RandomScale = FMath::RandRange(1, 3);
-				RandomIngredients = FMath::RandRange(1, 2);
-				UE_LOG(LogTemp, Display, TEXT("Random Scale : %d"), RandomScale);
-				ScaleValue = 1.f;
-				if (MainPlayer_PC != nullptr)
-				{
-					MainPlayer_PC->SetTaskDescription(RandomScale, RandomIngredients);
-					MainPlayer_PC->ZombiesSaved = MainPlayer_PC->ZombiesSaved + 1;
-					MainPlayer_PC->TimeLeft = MainPlayer_PC->TimeLeft + 5.f;
-					if (SuccessfullServeEffect != nullptr)
-					{
-						SuccessfullServeEffect->Activate();
-						GetWorldTimerManager().UnPauseTimer(EffectTimerHandle);
-					}
-					if (SuccessSound != nullptr)
-					{
-						UGameplayStatics::PlaySound2D(GetWorld(), SuccessSound);
-					}
-				}
-				Bread->Destroy();
-			}
-			else
-			{
-				ItemOnDesk = nullptr;
-				UE_LOG(LogTemp, Display, TEXT("Wrong Food Served!"));
-				RandomScale = FMath::RandRange(1, 3);
-				RandomIngredients = FMath::RandRange(1, 2);
-				UE_LOG(LogTemp, Display, TEXT("Random Scale : %d"), RandomScale);
-				ScaleValue = 1.f;
-				if (MainPlayer_PC != nullptr)
-				{
-					MainPlayer_PC->SetTaskDescription(RandomScale, RandomIngredients);
-					MainPlayer_PC->TimeLeft = MainPlayer_PC->TimeLeft - 10.f;
-					if (UnSuccessfullServeEffect != nullptr)
-					{
-						UnSuccessfullServeEffect->Activate();
-						GetWorldTimerManager().UnPauseTimer(EffectTimerHandle);
-					}
-					if (FailSound != nullptr)
-					{
-						UGameplayStatics::PlaySound2D(GetWorld(), FailSound);
-					}
-				}
-				Bread->Destroy();
-			}
-		}
+		ValidateServe(Bread);
 	}
 }
 
-void AServingDesk::EnlargeItem(float ScaleAmount)
+void AServingDesk::ValidateServe(ABread* BreadToServe)
+{
+	const bool bCorrectIngredient = BreadToServe->HasIngredient(CurrentIngredientName);
+	const bool bHasAntiDote = BreadToServe->HasAntiDote;
+	const bool bCorrectScale = (RandomScale == ScaleValue);
+	const bool bSuccess = bCorrectIngredient && bHasAntiDote && bCorrectScale;
+
+	if (bSuccess)
+	{
+		UE_LOG(LogTemp, Display, TEXT("Food Served!"));
+		if (SuccessfullServeEffect != nullptr)
+		{
+			SuccessfullServeEffect->Activate();
+
+			// Timer that deactivates the effect 3 seconds after the serve
+			GetWorldTimerManager().SetTimer(EffectTimerHandle, this, &AServingDesk::DisableEffects, 3.f, false);
+		}
+		if (SuccessSound != nullptr)
+		{
+			UGameplayStatics::PlaySound2D(GetWorld(), SuccessSound);
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Display, TEXT("Wrong Food Served!"));
+		if (UnSuccessfullServeEffect != nullptr)
+		{
+			UnSuccessfullServeEffect->Activate();
+
+			// Timer that deactivates the effect 3 seconds after the serve
+			GetWorldTimerManager().SetTimer(EffectTimerHandle, this, &AServingDesk::DisableEffects, 3.f, false);
+		}
+		if (FailSound != nullptr)
+		{
+			UGameplayStatics::PlaySound2D(GetWorld(), FailSound);
+		}
+	}
+
+	// Score and timer rules live in the game mode
+	if (GameMode != nullptr)
+	{
+		GameMode->RegisterServeResult(bSuccess);
+	}
+
+	// Common cleanup regardless of success or failure
+	ItemOnDesk = nullptr;
+	ScaleValue = 1;
+	PickNewOrder();
+	BreadToServe->Destroy();
+	Bread = nullptr;
+}
+
+void AServingDesk::EnlargeItem(int32 ScaleAmount)
 {
 	Bread = Cast<ABread>(ItemOnDesk);
 	if (Bread != nullptr)
@@ -201,6 +176,6 @@ void AServingDesk::EnlargeItem(float ScaleAmount)
 		{
 			Bread->SetActorScale3D(FVector(2, 2, 1));
 		}
-		UE_LOG(LogTemp, Log, TEXT("Scale Is : %f"), ScaleAmount);
+		UE_LOG(LogTemp, Log, TEXT("Scale Is : %d"), ScaleAmount);
 	}
 }

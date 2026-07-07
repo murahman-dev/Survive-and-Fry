@@ -1,18 +1,19 @@
-#include "ItemDesk.h"
+﻿#include "ItemDesk.h"
 #include "Components/StaticMeshComponent.h"
-#include "Kismet/GameplayStatics.h"
-#include "MainPlayer_CC.h"
 
 AItemDesk::AItemDesk()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
 	DefaultSceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("DefaultSceneRoot"));
-	SetRootComponent(RootComponent);
-	
+	SetRootComponent(DefaultSceneRoot);
+
+	// The visible desk mesh
+	// Also used for highlight via custom depth rendering
 	Desk = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Desk"));
 	Desk->SetupAttachment(DefaultSceneRoot);
 
+	// Items snap to this location when placed on the desk
 	ItemLocation = CreateDefaultSubobject<USceneComponent>(TEXT("Item Location"));
 	ItemLocation->SetupAttachment(DefaultSceneRoot);
 }
@@ -20,9 +21,4 @@ AItemDesk::AItemDesk()
 void AItemDesk::BeginPlay()
 {
 	Super::BeginPlay();
-}
-
-void AItemDesk::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
 }
